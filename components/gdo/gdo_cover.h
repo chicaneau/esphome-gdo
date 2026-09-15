@@ -17,6 +17,7 @@ class GdoCover : public cover::Cover, public Component {
 
   Trigger<> *get_single_press_trigger() { return &this->single_press_trigger_; }
   Trigger<> *get_double_press_trigger() { return &this->double_press_trigger_; }
+  Trigger<> *get_triple_press_trigger() { return &this->triple_press_trigger_; }
   void set_open_endstop(binary_sensor::BinarySensor *open_endstop) { this->open_endstop_ = open_endstop; }
   void set_close_endstop(binary_sensor::BinarySensor *close_endstop) { this->close_endstop_ = close_endstop; }
   void set_open_duration(uint32_t open_duration) { this->open_duration_ = open_duration; }
@@ -44,6 +45,8 @@ class GdoCover : public cover::Cover, public Component {
   uint32_t start_dir_time_{0};
   uint32_t last_publish_time_{0};
   float target_position_{0};
+  
+  cover::CoverOperation last_direction_{cover::COVER_OPERATION_IDLE};
 };
 
 }  // namespace gdo

@@ -93,4 +93,11 @@ cover:
       - switch.turn_on: relay
       - delay: ${double_press_delay}
       - switch.turn_on: relay
+    triple_press_action:
+      - logger.log: "relay triple press"
+      - switch.turn_on: relay
+      - delay: ${double_press_delay}
+      - switch.turn_on: relay
+      - delay: ${double_press_delay}
+      - switch.turn_on: relay
     open_endstop: open_endstop

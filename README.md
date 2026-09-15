@@ -14,7 +14,7 @@ Add the component to your config:
 
 ```yaml
 external_components:
-  - source: github://tronikos/esphome-gdo@main
+  - source: github://chicaneau/esphome-gdo@main
 ```
 
 ### `cover` platform `gdo`
@@ -25,6 +25,7 @@ external_components:
 | `close_duration`      | Required | Time the door takes to travel from fully open to fully closed.     |
 | `single_press_action` | Required | Automation that pulses the relay once.                             |
 | `double_press_action` | Required | Automation that pulses the relay twice.                            |
+| `triple_press_action` | Required | Automation that pulses the relay thrice.                            |
 | `open_endstop`        | Optional | ID of a binary sensor that reads on when the door is fully open.   |
 | `close_endstop`       | Optional | ID of a binary sensor that reads on when the door is fully closed. |
 
@@ -53,10 +54,11 @@ Defaults to `device_class: problem` and `entity_category: diagnostic`.
 ## Hardware requirements
 
 - A Garage Door Opener that you open/close with a single button. The behavior of the button is expected to be:
-  - If door is closed a single press opens it.
-  - If door is (fully or partially) open a single press closes it.
-  - If door is opening a single press stops it.
-  - If door is closing a single press opens it.
+    - If door is closed a single press opens it.
+    - If door is fully open a single press closes it.
+    - If door is opening a single press stops it.
+    - If door is closing a single press stops it.
+    - if door is partially open, a single press will open or close it in the opposite direction to what it was when it was last opening or closing
 - ESP board [compatible](https://esphome.io/#devices) with ESPHome.
 - Relay to either press the physical button of the wall control panel (for Chamberlain Security + 2.0) or short the controls on the garage door opener itself (for Chamberlain Security + 1.0 or Genie etc.).
 - One or two reed sensors to detect the fully-open and/or fully-closed states. If using a single reed sensor, it can be placed in either fully-open or fully-closed positions.
