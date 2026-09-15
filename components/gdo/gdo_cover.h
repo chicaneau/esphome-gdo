@@ -40,12 +40,13 @@ class GdoCover : public cover::Cover, public Component {
   uint32_t close_duration_{0};
   Trigger<> single_press_trigger_;
   Trigger<> double_press_trigger_;
+  Trigger<> triple_press_trigger_;
   Trigger<> *prev_command_trigger_{nullptr};
   uint32_t last_recompute_time_{0};
   uint32_t start_dir_time_{0};
   uint32_t last_publish_time_{0};
   float target_position_{0};
-  
+
   cover::CoverOperation last_direction_{cover::COVER_OPERATION_IDLE};
 };
 
