@@ -16,6 +16,18 @@ const float ALMOST_CLOSED = 0.01f;
 
 using namespace esphome::cover;
 
+static const char *op_name(CoverOperation op) {
+  switch (op) {
+    case COVER_OPERATION_IDLE:
+      return "IDLE";
+    case COVER_OPERATION_OPENING:
+      return "OPENING";
+    case COVER_OPERATION_CLOSING:
+      return "CLOSING";
+  }
+  return "?";
+}
+
 // How long to wait for an endstop before giving up on it. The travel-time
 // estimate is never exact, so allow a margin over the configured duration.
 // Timing out at exactly the duration means a door that takes 12.8s when
@@ -148,6 +160,8 @@ void GdoCover::loop() {
       // door is definitely moving, then a single press stops it reliably.
       stop_press_pending = true;
     } else {
+      ESP_LOGI(TAG, "Reached target %.0f%% after %.1fs. Sending stop press.", this->target_position_ * 100.0f,
+               (now - this->start_dir_time_) / 1e3f);
       this->start_direction_(COVER_OPERATION_IDLE);
     }
     // While holding off, skip the state push; the every-second publish below
@@ -155,6 +169,16 @@ void GdoCover::loop() {
     if (!stop_press_pending) {
       this->publish_state();
     }
+  } else if (this->stop_press_deadline_ != 0 && (int32_t) (now - this->stop_press_deadline_) >= 0) {
+    // Backstop: the estimate never registered the partial target within 1.5x
+    // of its expected travel time, yet the door was commanded to stop there.
+    // Send the stop press anyway rather than let the door run to its limit.
+    ESP_LOGI(TAG, "Estimate failed to reach target %.0f%% within deadline - forcing stop press. Current %.0f%%.",
+             this->target_position_ * 100.0f, this->position * 100.0f);
+    this->stop_press_deadline_ = 0;
+    this->position = this->target_position_;
+    this->start_direction_(COVER_OPERATION_IDLE);
+    this->publish_state();
   } else if ((this->current_operation == COVER_OPERATION_OPENING && this->open_endstop_ != nullptr &&
               now - this->start_dir_time_ > endstop_timeout(this->open_duration_)) ||
              (this->current_operation == COVER_OPERATION_CLOSING && this->close_endstop_ != nullptr &&
@@ -183,11 +207,14 @@ CoverTraits GdoCover::get_traits() {
 
 void GdoCover::control(const CoverCall &call) {
   if (call.get_stop()) {
+    ESP_LOGI(TAG, "Received stop command.");
     this->start_direction_(COVER_OPERATION_IDLE);
     this->publish_state();
   }
   if (call.get_position().has_value()) {
     auto pos = *call.get_position();
+    ESP_LOGI(TAG, "Received position command: %.0f%% (current %.0f%%, operation %s).", pos * 100.0f,
+             this->position * 100.0f, op_name(this->current_operation));
     if (pos == this->position) {
       ESP_LOGI(TAG, "Nothing to do. Already at target position.");
     } else {
@@ -325,16 +352,31 @@ void GdoCover::start_direction_(CoverOperation dir, bool perform_trigger) {
   // Earliest time an auto stop press for a partial target may be sent. The
   // press automation runs asynchronously, so the relay is not even clicked
   // until the whole sequence has elapsed, and the opener then needs
-  // start_delay_ to physically start moving. A takeover (perform_trigger
-  // false) means the door is already moving on its own, so no wait is needed.
+  // start_delay_ to physically start moving.
   uint32_t pulses = 1;
   if (trig == &this->double_press_trigger_) {
     pulses = 2;
   } else if (trig == &this->triple_press_trigger_) {
     pulses = 3;
   }
+  float start_pos = this->position;
+  float target = this->target_position_;
+  bool partial_target = (target > COVER_CLOSED) && (target < COVER_OPEN);
   if (perform_trigger) {
     this->stop_press_earliest_ = now + this->start_delay_ + (pulses - 1) * this->press_interval_;
+    ESP_LOGI(TAG, "Starting %s from %.0f%% to %.0f%%; %u-click press; stop press allowed after %lu ms.",
+             op_name(dir), start_pos * 100.0f, target * 100.0f, pulses,
+             (unsigned long) (this->stop_press_earliest_ - now));
+    // Deadline backstop: 1.5x the estimated travel time for the requested
+    // partial move. Whatever confuses the estimate, the door still gets a
+    // stop press rather than running into the endstop.
+    if (partial_target && (dir == COVER_OPERATION_OPENING || dir == COVER_OPERATION_CLOSING)) {
+      float dur = (dir == COVER_OPERATION_OPENING) ? this->open_duration_ : this->close_duration_;
+      float delta = (target > start_pos) ? (target - start_pos) : (start_pos - target);
+      this->stop_press_deadline_ = this->stop_press_earliest_ + (uint32_t) (delta * dur * 1.5f);
+    } else {
+      this->stop_press_deadline_ = 0;
+    }
     this->stop_prev_trigger_();
     trig->trigger();
     this->prev_command_trigger_ = trig;
@@ -342,6 +384,9 @@ void GdoCover::start_direction_(CoverOperation dir, bool perform_trigger) {
     // A takeover (perform_trigger false) means the door is already moving on
     // its own, so a stop press can be sent as soon as the estimate allows it.
     this->stop_press_earliest_ = now;
+    this->stop_press_deadline_ = 0;
+    ESP_LOGI(TAG, "External %s: from %.0f%% to %.0f%% (no press).", op_name(dir), start_pos * 100.0f,
+             target * 100.0f);
   }
 }
 

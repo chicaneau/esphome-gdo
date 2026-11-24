@@ -51,6 +51,9 @@ class GdoCover : public cover::Cover, public Component {
   // cannot see the automation, so it must be configured to match the YAML.
   uint32_t press_interval_{160};
   uint32_t stop_press_earliest_{0};
+  // Backstop for partial targets: the time by which the stop press must be
+  // sent even if the position estimate never registers the target. 0 = none.
+  uint32_t stop_press_deadline_{0};
   Trigger<> single_press_trigger_;
   Trigger<> double_press_trigger_;
   Trigger<> triple_press_trigger_;
