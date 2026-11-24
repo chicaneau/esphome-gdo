@@ -77,12 +77,22 @@ travel. Fix: give the endstop binary sensors a real debounce, e.g.
 `filters: - delayed_on: 300ms` (the example config defaults to 300ms; 20ms is
 not enough for most reeds). The firmware additionally ignores "reached"
 blips that contradict a move it started itself with a relay press (the door
-is provably leaving that reed then), and trusts the reed at other times, so
-a release blip when the door seats at the end of a travel only shows up as a
-sub-second "opening" blip in Home Assistant before the correct state is
-re-synced. Confirm with the device log: a chatter blip that is suppressed
+is provably leaving that reed then), and trusts the reed at other times.
+Confirm with the device log: a chatter blip that is suppressed
 logs `chatter, ignoring`; a real partial move ends with
 `Reached target NN% after N.Ns. Sending stop press.`
+
+**The cover briefly flashes "opening" or "closing" in Home Assistant when the
+door reaches a limit.** This too is reed chatter: as the door seats against the
+end stop, the reed bounces away from the magnet for several hundred
+milliseconds. An idle firmware used to read that as an externally commanded
+travel and published a takeover move before the reed settled back. The
+firmware now defers such a takeover for one second and only commits if the
+reed is still away, so a seating bounce never reaches Home Assistant. Do not
+"fix" this with a large `delayed_off` filter on the endstops: the bounce is
+longer than any reasonable window, and a big filter delays the genuine release
+at the start of every travel. A short `delayed_on: 300ms` is still the right
+debounce for the chatter described above.
 
 ## Hardware requirements
 

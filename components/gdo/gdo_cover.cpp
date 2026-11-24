@@ -40,6 +40,18 @@ static constexpr uint32_t CHATTER_GRACE_MS = 3000;
 // configured for 12.6s glitches to an unknown position on every single cycle.
 static uint32_t endstop_timeout(uint32_t duration) { return duration + duration / 4 + 2000; }
 
+// When an endstop releases while we believe the door is idle, that may be the
+// start of an externally commanded move - or just the reed bouncing as the
+// door seats against the end stop. Publishing the takeover immediately makes
+// Home Assistant flash IS_OPENING/IS_CLOSING for a moment on every arrival.
+// Instead wait this long and only commit to the takeover if the reed is still
+// away when we check. A seating bounce resolves (and cancels the pending
+// takeover via the "reached" event) in well under a second, including the
+// delay_endstop filter lag; a genuinely leaving door keeps the reed away.
+static constexpr uint32_t RELEASE_CONFIRM_MS = 1000;
+static const char *const OPEN_TAKEOVER_KEY = "gdo_open_takeover";
+static const char *const CLOSE_TAKEOVER_KEY = "gdo_close_takeover";
+
 void GdoCover::dump_config() {
   LOG_COVER("", "GDO Cover", this);
   LOG_BINARY_SENSOR("  ", "Open Endstop", this->open_endstop_);
@@ -78,6 +90,9 @@ void GdoCover::setup() {
           ESP_LOGI(TAG, "Open endstop reported reached %.1fs into an uncommanded move - trusting reed.",
                    (millis() - this->start_dir_time_) / 1e3f);
         }
+        // Cancel any pending external-move takeover from a release blip:
+        // the door never left.
+        this->cancel_timeout(OPEN_TAKEOVER_KEY);
         // Reached the open endstop. Update state
         float dur = (millis() - this->start_dir_time_) / 1e3f;
         ESP_LOGI(TAG, "Open endstop reached. Took %.1fs.", dur);
@@ -91,8 +106,14 @@ void GdoCover::setup() {
         // and start updating state without triggering a press.
         ESP_LOGI(TAG, "Open endstop released.");
         if (this->current_operation == COVER_OPERATION_IDLE) {
-          this->target_position_ = COVER_CLOSED;
-          this->start_direction_(COVER_OPERATION_CLOSING, false);
+          // Defer the takeover; see RELEASE_CONFIRM_MS.
+          this->set_timeout(OPEN_TAKEOVER_KEY, RELEASE_CONFIRM_MS, [this]() {
+            if (this->current_operation != COVER_OPERATION_IDLE) {
+              return;  // a commanded move started meanwhile
+            }
+            this->target_position_ = COVER_CLOSED;
+            this->start_direction_(COVER_OPERATION_CLOSING, false);
+          });
         }
       }
     });
@@ -119,6 +140,9 @@ void GdoCover::setup() {
           ESP_LOGI(TAG, "Closed endstop reported reached %.1fs into an uncommanded move - trusting reed.",
                    (millis() - this->start_dir_time_) / 1e3f);
         }
+        // Cancel any pending external-move takeover from a release blip:
+        // the door never left.
+        this->cancel_timeout(CLOSE_TAKEOVER_KEY);
         // Reached the closed endstop. Update state
         float dur = (millis() - this->start_dir_time_) / 1e3f;
         ESP_LOGI(TAG, "Closed endstop reached. Took %.1fs.", dur);
@@ -132,8 +156,14 @@ void GdoCover::setup() {
         // and start updating state without triggering a press.
         ESP_LOGI(TAG, "Closed endstop released.");
         if (this->current_operation == COVER_OPERATION_IDLE) {
-          this->target_position_ = COVER_OPEN;
-          this->start_direction_(COVER_OPERATION_OPENING, false);
+          // Defer the takeover; see RELEASE_CONFIRM_MS.
+          this->set_timeout(CLOSE_TAKEOVER_KEY, RELEASE_CONFIRM_MS, [this]() {
+            if (this->current_operation != COVER_OPERATION_IDLE) {
+              return;  // a commanded move started meanwhile
+            }
+            this->target_position_ = COVER_OPEN;
+            this->start_direction_(COVER_OPERATION_OPENING, false);
+          });
         }
       }
     });
