@@ -56,6 +56,13 @@ void GdoCover::setup() {
   if (this->open_endstop_ != nullptr) {
     this->open_endstop_->add_on_state_callback([this](bool value) {
       if (value) {
+        if (this->current_operation == COVER_OPERATION_CLOSING) {
+          // A reed at the top of travel cannot genuinely trigger while the
+          // door is moving away from it. This is contact chatter; trusting it
+          // would rewrite the position and abort the move.
+          ESP_LOGI(TAG, "Open endstop reported reached while closing - chatter, ignoring.");
+          return;
+        }
         // Reached the open endstop. Update state
         float dur = (millis() - this->start_dir_time_) / 1e3f;
         ESP_LOGI(TAG, "Open endstop reached. Took %.1fs.", dur);
@@ -78,6 +85,15 @@ void GdoCover::setup() {
   if (this->close_endstop_ != nullptr) {
     this->close_endstop_->add_on_state_callback([this](bool value) {
       if (value) {
+        if (this->current_operation == COVER_OPERATION_OPENING) {
+          // A reed at the bottom of travel cannot genuinely trigger while the
+          // door is moving away from it. Reed switches chatter for a few
+          // hundred ms when leaving the magnet; without this guard the event
+          // rewrites the position to fully closed, aborts the partial move,
+          // and the following release is misread as an external full open.
+          ESP_LOGI(TAG, "Closed endstop reported reached while opening - chatter, ignoring.");
+          return;
+        }
         // Reached the closed endstop. Update state
         float dur = (millis() - this->start_dir_time_) / 1e3f;
         ESP_LOGI(TAG, "Closed endstop reached. Took %.1fs.", dur);

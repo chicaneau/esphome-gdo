@@ -66,6 +66,22 @@ Reports the state of the safety obstruction sensor.
 
 Defaults to `device_class: problem` and `entity_category: diagnostic`.
 
+## Troubleshooting
+
+**A partial move (open/close to a %) runs to the end limit and the relay never
+clicks a second time.** Reed switches chatter for a few hundred milliseconds
+when the door pulls away from the endstop magnet at the start of a travel. A
+spurious "endstop reached" blip that reaches the cover logic in time aborts the
+move, and the release right after it is then misread as an external full
+travel. Fix: give the endstop binary sensors a real debounce, e.g.
+`filters: - delayed_on: 300ms` (the example config defaults to 300ms; 20ms is
+not enough for most reeds). The firmware additionally ignores "reached"
+events that contradict the current direction of travel, so short chatter is
+harmless even without the filter, but very long blips (>300ms) still need it.
+Confirm with the device log: `Closed endstop reported reached while opening -
+chatter, ignoring.` shows the guard active, and a real partial move ends with
+`Reached target NN% after N.Ns. Sending stop press.`
+
 ## Hardware requirements
 
 - A Garage Door Opener that you open/close with a single button. The behavior of the button is expected to be:

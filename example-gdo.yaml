@@ -7,7 +7,10 @@ substitutions:
   relay_pin: D1
   open_endstop_pin: D2
   input_obst_pin: D7
-  debounce_duration: 20ms
+  # Reed switches chatter for a few hundred ms when the door pulls away from
+  # the magnet at the start of a travel. Keep this well above that (300ms+):
+  # a spurious "endstop reached" blip mid-travel would corrupt the position.
+  debounce_duration: 300ms
   relay_on_duration: 80ms
   double_press_delay: 160ms
   open_duration: 12.6s
