@@ -22,6 +22,8 @@ class GdoCover : public cover::Cover, public Component {
   void set_close_endstop(binary_sensor::BinarySensor *close_endstop) { this->close_endstop_ = close_endstop; }
   void set_open_duration(uint32_t open_duration) { this->open_duration_ = open_duration; }
   void set_close_duration(uint32_t close_duration) { this->close_duration_ = close_duration; }
+  void set_start_delay(uint32_t start_delay) { this->start_delay_ = start_delay; }
+  void set_press_interval(uint32_t press_interval) { this->press_interval_ = press_interval; }
 
   cover::CoverTraits get_traits() override;
 
@@ -40,6 +42,15 @@ class GdoCover : public cover::Cover, public Component {
   binary_sensor::BinarySensor *close_endstop_{nullptr};
   uint32_t open_duration_{0};
   uint32_t close_duration_{0};
+  // Time between the last relay click of a start sequence and the moment the
+  // opener has physically started moving. An auto stop press must not be sent
+  // before that, or the opener (which still sees an idle door) treats it as a
+  // new start press instead of a stop.
+  uint32_t start_delay_{1000};
+  // Interval between clicks of the double/triple press actions; the C++ side
+  // cannot see the automation, so it must be configured to match the YAML.
+  uint32_t press_interval_{160};
+  uint32_t stop_press_earliest_{0};
   Trigger<> single_press_trigger_;
   Trigger<> double_press_trigger_;
   Trigger<> triple_press_trigger_;

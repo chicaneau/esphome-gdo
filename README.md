@@ -28,6 +28,8 @@ external_components:
 | `triple_press_action` | Required | Automation that pulses the relay thrice.                            |
 | `open_endstop`        | Optional | ID of a binary sensor that reads on when the door is fully open.   |
 | `close_endstop`       | Optional | ID of a binary sensor that reads on when the door is fully closed. |
+| `start_delay`         | Optional | Grace after a start press before an auto stop press may be sent. Default `1s`. |
+| `press_interval`      | Optional | Delay between relay clicks in the double/triple press automations. Must match the YAML; default `160ms`. |
 
 At least one of `open_endstop` / `close_endstop` is required. Without one the
 position estimate can never be corrected, so it drifts.
@@ -40,6 +42,19 @@ so the durations do not have to be exact to the millisecond.
 Position is held just short of 100% / 0% until the corresponding endstop
 actually confirms it, so the cover does not read "fully open" while the door is
 still moving.
+
+When asked for a partial position, the firmware sends the start press and then
+a stop press once the time estimate reaches the target. But the opener needs a
+moment after the last click to physically start moving, so on short moves the
+stop press would otherwise land while the door is still standing still — and
+an opener that sees an idle door treats that press as a new start press rather
+than a stop, running the door all the way to its limit while the cover already
+reports it stopped. The firmware therefore never sends the auto stop press
+earlier than the click-sequence duration (`press_interval` × clicks) plus
+`start_delay`, by which point the door is definitely moving and a single press
+reliably stops it. The trade-off is that very short partial moves overshoot the
+target by about that grace window (roughly 8% of a full travel with default
+durations); lower `start_delay` if your opener reacts faster.
 
 ### `binary_sensor` platform `gdo`
 

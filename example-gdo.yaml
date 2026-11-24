@@ -85,6 +85,10 @@ cover:
     device_class: garage
     open_duration: ${open_duration}
     close_duration: ${close_duration}
+    # Must match ${double_press_delay}: the firmware waits this long between
+    # clicks when computing when a stop press can be sent.
+    press_interval: ${double_press_delay}
+    start_delay: 1s
     single_press_action:
       - logger.log: "relay single press"
       - switch.turn_on: relay

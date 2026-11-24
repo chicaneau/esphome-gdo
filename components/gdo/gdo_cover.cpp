@@ -28,6 +28,8 @@ void GdoCover::dump_config() {
   ESP_LOGCONFIG(TAG, "  Open Duration: %.1fs", this->open_duration_ / 1e3f);
   LOG_BINARY_SENSOR("  ", "Close Endstop", this->close_endstop_);
   ESP_LOGCONFIG(TAG, "  Close Duration: %.1fs", this->close_duration_ / 1e3f);
+  ESP_LOGCONFIG(TAG, "  Start Delay: %.1fs", this->start_delay_ / 1e3f);
+  ESP_LOGCONFIG(TAG, "  Press Interval: %.1fs", this->press_interval_ / 1e3f);
 }
 
 void GdoCover::setup() {
@@ -133,13 +135,26 @@ void GdoCover::loop() {
   this->recompute_position_();
 
   if (this->is_at_target_()) {
+    bool stop_press_pending = false;
     if (this->target_position_ == COVER_OPEN || this->target_position_ == COVER_CLOSED) {
       // Don't trigger stop, let the cover stop by itself.
       this->current_operation = COVER_OPERATION_IDLE;
+    } else if ((int32_t)(now - this->stop_press_earliest_) < 0) {
+      // The time-based estimate has reached the target, but the door has not
+      // physically started moving yet (click-sequence time plus opener reaction
+      // time). A stop press sent now reaches an opener that still sees an idle
+      // door and gets treated as a new start press, leaving the door running
+      // to its limit while the cover already reports idle. Hold off until the
+      // door is definitely moving, then a single press stops it reliably.
+      stop_press_pending = true;
     } else {
       this->start_direction_(COVER_OPERATION_IDLE);
     }
-    this->publish_state();
+    // While holding off, skip the state push; the every-second publish below
+    // already reports the moving position without flooding the API.
+    if (!stop_press_pending) {
+      this->publish_state();
+    }
   } else if ((this->current_operation == COVER_OPERATION_OPENING && this->open_endstop_ != nullptr &&
               now - this->start_dir_time_ > endstop_timeout(this->open_duration_)) ||
              (this->current_operation == COVER_OPERATION_CLOSING && this->close_endstop_ != nullptr &&
@@ -295,14 +310,38 @@ void GdoCover::start_direction_(CoverOperation dir, bool perform_trigger) {
 
   this->current_operation = dir;
 
+  // Record the direction of every commanded motion, not just of stops. The
+  // press logic below (and the opposite-direction rule it implements) relies
+  // on it, and a stale value picks a wrong press sequence, moving the door the
+  // other way when asked for a partial position.
+  if (dir == COVER_OPERATION_OPENING || dir == COVER_OPERATION_CLOSING) {
+    this->last_direction_ = dir;
+  }
+
   const uint32_t now = millis();
   this->start_dir_time_ = now;
   this->last_recompute_time_ = now;
 
+  // Earliest time an auto stop press for a partial target may be sent. The
+  // press automation runs asynchronously, so the relay is not even clicked
+  // until the whole sequence has elapsed, and the opener then needs
+  // start_delay_ to physically start moving. A takeover (perform_trigger
+  // false) means the door is already moving on its own, so no wait is needed.
+  uint32_t pulses = 1;
+  if (trig == &this->double_press_trigger_) {
+    pulses = 2;
+  } else if (trig == &this->triple_press_trigger_) {
+    pulses = 3;
+  }
   if (perform_trigger) {
+    this->stop_press_earliest_ = now + this->start_delay_ + (pulses - 1) * this->press_interval_;
     this->stop_prev_trigger_();
     trig->trigger();
     this->prev_command_trigger_ = trig;
+  } else {
+    // A takeover (perform_trigger false) means the door is already moving on
+    // its own, so a stop press can be sent as soon as the estimate allows it.
+    this->stop_press_earliest_ = now;
   }
 }
 

@@ -16,6 +16,8 @@ GdoCover = gdo_ns.class_("GdoCover", cover.Cover, cg.Component)
 CONF_SINGLE_PRESS_ACTION = "single_press_action"
 CONF_DOUBLE_PRESS_ACTION = "double_press_action"
 CONF_TRIPLE_PRESS_ACTION = "triple_press_action"
+CONF_START_DELAY = "start_delay"
+CONF_PRESS_INTERVAL = "press_interval"
 
 CONFIG_SCHEMA = cv.All(
     cover.cover_schema(GdoCover)
@@ -25,6 +27,11 @@ CONFIG_SCHEMA = cv.All(
             cv.Required(CONF_OPEN_DURATION): cv.positive_time_period_milliseconds,
             cv.Optional(CONF_CLOSE_ENDSTOP): cv.use_id(binary_sensor.BinarySensor),
             cv.Required(CONF_CLOSE_DURATION): cv.positive_time_period_milliseconds,
+            # Grace period between the last relay click of a start sequence and
+            # the first auto stop press for a partial position.
+            cv.Optional(CONF_START_DELAY, default="1s"): cv.positive_time_period_milliseconds,
+            # Delay between relay clicks in the double/triple press automations.
+            cv.Optional(CONF_PRESS_INTERVAL, default="160ms"): cv.positive_time_period_milliseconds,
             cv.Required(CONF_SINGLE_PRESS_ACTION): automation.validate_automation(
                 single=True
             ),
@@ -54,6 +61,8 @@ async def to_code(config):
         endstop = await cg.get_variable(config[CONF_CLOSE_ENDSTOP])
         cg.add(var.set_close_endstop(endstop))
     cg.add(var.set_close_duration(config[CONF_CLOSE_DURATION]))
+    cg.add(var.set_start_delay(config[CONF_START_DELAY]))
+    cg.add(var.set_press_interval(config[CONF_PRESS_INTERVAL]))
 
     await automation.build_automation(
         var.get_single_press_trigger(), [], config[CONF_SINGLE_PRESS_ACTION]
