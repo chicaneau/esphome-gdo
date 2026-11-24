@@ -76,10 +76,12 @@ move, and the release right after it is then misread as an external full
 travel. Fix: give the endstop binary sensors a real debounce, e.g.
 `filters: - delayed_on: 300ms` (the example config defaults to 300ms; 20ms is
 not enough for most reeds). The firmware additionally ignores "reached"
-events that contradict the current direction of travel, so short chatter is
-harmless even without the filter, but very long blips (>300ms) still need it.
-Confirm with the device log: `Closed endstop reported reached while opening -
-chatter, ignoring.` shows the guard active, and a real partial move ends with
+blips that contradict a move it started itself with a relay press (the door
+is provably leaving that reed then), and trusts the reed at other times, so
+a release blip when the door seats at the end of a travel only shows up as a
+sub-second "opening" blip in Home Assistant before the correct state is
+re-synced. Confirm with the device log: a chatter blip that is suppressed
+logs `chatter, ignoring`; a real partial move ends with
 `Reached target NN% after N.Ns. Sending stop press.`
 
 ## Hardware requirements

@@ -28,7 +28,13 @@ static const char *op_name(CoverOperation op) {
   return "?";
 }
 
-// How long to wait for an endstop before giving up on it. The travel-time
+// How long after a press-started move a contradictory "endstop reached" event
+// may still be dismissed as departure chatter. A door leaving the magnet
+// re-triggers the reed for well under a second at most; much later and an ON
+// reading is far more likely to mean the door really is back at that limit.
+static constexpr uint32_t CHATTER_GRACE_MS = 3000;
+
+// How long to wait for an endstop before giving up. The travel-time
 // estimate is never exact, so allow a margin over the configured duration.
 // Timing out at exactly the duration means a door that takes 12.8s when
 // configured for 12.6s glitches to an unknown position on every single cycle.
@@ -57,11 +63,20 @@ void GdoCover::setup() {
     this->open_endstop_->add_on_state_callback([this](bool value) {
       if (value) {
         if (this->current_operation == COVER_OPERATION_CLOSING) {
-          // A reed at the top of travel cannot genuinely trigger while the
-          // door is moving away from it. This is contact chatter; trusting it
-          // would rewrite the position and abort the move.
-          ESP_LOGI(TAG, "Open endstop reported reached while closing - chatter, ignoring.");
-          return;
+          if (this->move_was_pressed_ && (int32_t) (millis() - this->move_started_ms_) < (int32_t) CHATTER_GRACE_MS) {
+            // A reed at the top of travel cannot genuinely trigger in the
+            // first seconds of a press-started closing move: the door is
+            // provably leaving it. This is contact chatter; trusting it would
+            // rewrite the position and abort the move.
+            ESP_LOGI(TAG, "Open endstop reported reached leaving the magnet - chatter, ignoring.");
+            return;
+          }
+          // Not chatter from a commanded move: the door is physically sitting
+          // on this reed, so trust it over the time-based tracking. (A release
+          // blip can briefly fake a takeover move; a solidly ON reed is the
+          // better witness and re-syncs the state.)
+          ESP_LOGI(TAG, "Open endstop reported reached %.1fs into an uncommanded move - trusting reed.",
+                   (millis() - this->start_dir_time_) / 1e3f);
         }
         // Reached the open endstop. Update state
         float dur = (millis() - this->start_dir_time_) / 1e3f;
@@ -86,13 +101,23 @@ void GdoCover::setup() {
     this->close_endstop_->add_on_state_callback([this](bool value) {
       if (value) {
         if (this->current_operation == COVER_OPERATION_OPENING) {
-          // A reed at the bottom of travel cannot genuinely trigger while the
-          // door is moving away from it. Reed switches chatter for a few
-          // hundred ms when leaving the magnet; without this guard the event
-          // rewrites the position to fully closed, aborts the partial move,
-          // and the following release is misread as an external full open.
-          ESP_LOGI(TAG, "Closed endstop reported reached while opening - chatter, ignoring.");
-          return;
+          if (this->move_was_pressed_ && (int32_t) (millis() - this->move_started_ms_) < (int32_t) CHATTER_GRACE_MS) {
+            // Reed switches chatter for a few hundred ms when the door pulls
+            // away from the magnet at the start of a press-started opening.
+            // The door is provably leaving this reed, so the ON can only be
+            // chatter; without this guard it would rewrite the position to
+            // fully closed, abort the partial move, and the following release
+            // would be misread as an external full open.
+            ESP_LOGI(TAG, "Closed endstop reported reached leaving the magnet - chatter, ignoring.");
+            return;
+          }
+          // Not chatter from a commanded move: the door is physically sitting
+          // on this reed, so trust it over the time-based tracking. (A release
+          // blip on arrival at the bottom can briefly fake a takeover opening
+          // move; a solidly ON reed is the better witness and re-syncs the
+          // state to fully closed.)
+          ESP_LOGI(TAG, "Closed endstop reported reached %.1fs into an uncommanded move - trusting reed.",
+                   (millis() - this->start_dir_time_) / 1e3f);
         }
         // Reached the closed endstop. Update state
         float dur = (millis() - this->start_dir_time_) / 1e3f;
@@ -352,6 +377,12 @@ void GdoCover::start_direction_(CoverOperation dir, bool perform_trigger) {
   }
 
   this->current_operation = dir;
+
+  // Remember whether this move was started by one of our presses or is an
+  // external takeover; the endstop-chatter guards need to know whether the
+  // door can be proven to be leaving the reed they watch.
+  this->move_was_pressed_ = perform_trigger;
+  this->move_started_ms_ = millis();
 
   // Record the direction of every commanded motion, not just of stops. The
   // press logic below (and the opposite-direction rule it implements) relies

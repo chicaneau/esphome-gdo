@@ -64,6 +64,15 @@ class GdoCover : public cover::Cover, public Component {
   float target_position_{0};
 
   cover::CoverOperation last_direction_{cover::COVER_OPERATION_IDLE};
+  // True while the move currently being tracked was started by one of our own
+  // relay presses, false when it is an external takeover (no press). Used to
+  // decide whether a contradictory endstop event can be chatter (door is
+  // provably leaving that reed) or must be trusted (nothing proves the door
+  // left; the reed sitting solidly ON means the door is really there).
+  bool move_was_pressed_{true};
+  // millis() of the last direction change, to bound how long a pressed move's
+  // departure-chatter grace window stays in effect.
+  uint32_t move_started_ms_{0};
   bool endstop_reconciled_{false};
 };
 
