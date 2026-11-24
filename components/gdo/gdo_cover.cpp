@@ -38,22 +38,7 @@ void GdoCover::setup() {
   } else {
     this->position = UNKNOWN_POSITION;
   }
-  if (this->open_endstop_ != nullptr && this->open_endstop_->has_state()) {
-    // Fix restored state based on open endstop
-    if (this->open_endstop_->state) {
-      this->position = COVER_OPEN;
-    } else if (this->position == COVER_OPEN) {
-      this->position = UNKNOWN_POSITION;
-    }
-  }
-  if (this->close_endstop_ != nullptr && this->close_endstop_->has_state()) {
-    // Fix restored state based on closed endstop
-    if (this->close_endstop_->state) {
-      this->position = COVER_CLOSED;
-    } else if (this->position == COVER_CLOSED) {
-      this->position = UNKNOWN_POSITION;
-    }
-  }
+  this->reconcile_endstop_state_();
   if (this->open_endstop_ != nullptr) {
     this->open_endstop_->add_on_state_callback([this](bool value) {
       if (value) {
@@ -100,7 +85,44 @@ void GdoCover::setup() {
   }
 }
 
+void GdoCover::reconcile_endstop_state_() {
+  // Don't trust a one-shot read at boot: after a power loss the GPIO sensor
+  // and its debounce filter may not have settled yet. Wait until both endstops
+  // (that are configured) have reported a state, then fix the restored position.
+  auto ready = [](binary_sensor::BinarySensor *s) { return s == nullptr || s->has_state(); };
+  if (!ready(this->open_endstop_) || !ready(this->close_endstop_)) {
+    return;
+  }
+
+  if (this->open_endstop_ != nullptr) {
+    // Fix restored state based on open endstop
+    if (this->open_endstop_->state) {
+      this->position = COVER_OPEN;
+    } else if (this->position == COVER_OPEN) {
+      this->position = UNKNOWN_POSITION;
+    }
+  }
+  if (this->close_endstop_ != nullptr) {
+    // Fix restored state based on closed endstop
+    if (this->close_endstop_->state) {
+      this->position = COVER_CLOSED;
+    } else if (this->position == COVER_CLOSED) {
+      this->position = UNKNOWN_POSITION;
+    }
+  }
+  if (!this->endstop_reconciled_) {
+    this->endstop_reconciled_ = true;
+  }
+}
+
 void GdoCover::loop() {
+  if (!this->endstop_reconciled_) {
+    this->reconcile_endstop_state_();
+    if (this->endstop_reconciled_) {
+      this->publish_state();
+    }
+  }
+
   if (this->current_operation == COVER_OPERATION_IDLE) {
     return;
   }

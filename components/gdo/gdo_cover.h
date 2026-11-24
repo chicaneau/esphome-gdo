@@ -34,6 +34,8 @@ class GdoCover : public cover::Cover, public Component {
 
   void recompute_position_();
 
+  void reconcile_endstop_state_();
+
   binary_sensor::BinarySensor *open_endstop_{nullptr};
   binary_sensor::BinarySensor *close_endstop_{nullptr};
   uint32_t open_duration_{0};
@@ -48,6 +50,7 @@ class GdoCover : public cover::Cover, public Component {
   float target_position_{0};
 
   cover::CoverOperation last_direction_{cover::COVER_OPERATION_IDLE};
+  bool endstop_reconciled_{false};
 };
 
 }  // namespace gdo
